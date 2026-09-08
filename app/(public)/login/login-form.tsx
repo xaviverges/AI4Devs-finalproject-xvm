@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { PasswordInput } from "@/components/password-input";
 import { Button } from "@/components/ui/button";
 
 /**
@@ -68,16 +70,25 @@ export function LoginForm({ next }: { next?: string }) {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="password" className="text-sm font-medium">
-          Contraseña
-        </label>
-        <input
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <label htmlFor="password" className="text-sm font-medium">
+            Contraseña
+          </label>
+          {/* Junto al campo y no al pie: quien no recuerda la contraseña se da cuenta
+              justo aquí, y es donde tiene que encontrar la salida. */}
+          <Link
+            href="/recuperar-contrasena"
+            className="text-sm text-[var(--muted-foreground)] underline underline-offset-4"
+          >
+            ¿Has olvidado la contraseña?
+          </Link>
+        </div>
+        <PasswordInput
           id="password"
           name="password"
-          type="password"
           autoComplete="current-password"
           required
-          className="h-9 rounded-md border px-3 text-sm"
+          toggleLabel="Mostrar contraseña"
         />
       </div>
 

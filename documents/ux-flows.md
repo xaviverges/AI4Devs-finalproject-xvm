@@ -27,7 +27,7 @@ autenticado**. La frontera no es un rol más: es una proyección de datos distin
 
 | Actor | Rol de cuenta | Superficie | Ruta base | Cómo se le deja entrar |
 |---|---|---|---|---|
-| **Visitante** | — (sin sesión) | Pública | `/`, `/catalogo`, `/planes`, `/registro`, `/login` | Abierta |
+| **Visitante** | — (sin sesión) | Pública | `/`, `/catalogo`, `/planes`, `/registro`, `/login`, `/recuperar-contrasena`, `/restablecer-contrasena` | Abierta |
 | **Suscriptor** | `SUBSCRIBER` | Portal | `/portal` | `proxy.ts` → `portal.access` |
 | **Operador** | `OPERATOR` | Back-office | `/backoffice` | `proxy.ts` → `backoffice.access` |
 | **Admin** | `ADMIN` | Back-office (ampliado) | `/backoffice` + `configuracion`, `empleados` | Permisos `settings.manage`, `employee.manage`, `copy.retire` |
@@ -102,6 +102,12 @@ flowchart TD
     classDef api fill:#fef9c3,stroke:#ca8a04,color:#713f12
     classDef missing fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
 ```
+
+> **Añadido el 2026-09-06** (cambio `recuperar-contrasena`, posterior a esta
+> auditoría): la superficie pública gana `/recuperar-contrasena` y
+> `/restablecer-contrasena`, colgando de `/login`. No alteran el mapa —son una salida
+> lateral del acceso, no un destino nuevo del recorrido—, pero cierran el único
+> callejón sin retorno que le quedaba al login.
 
 **El hueco estructural del mapa es `/catalogo/:id`.** Hoy el catálogo es una rejilla
 sin destino: no existe ficha de set. Y la ficha es justamente donde viven las dos
@@ -465,6 +471,12 @@ flowchart TD
 
 **Estado: implementado.** La autoprotección del admin es una regla que conviene
 explicar en la interfaz *antes* del intento, no como error después.
+
+> **Corrección del 2026-09-06.** Este flujo daba el alta por hecha, y solo lo estaba a
+> medias: `POST /api/employees` existía con su permiso y su auditoría desde el bloque
+> 8, pero la pantalla no tenía formulario — crear un operador exigía llamar al endpoint
+> a mano. Ya lo tiene. Dice además lo que la API no puede decir: que la contraseña
+> inicial hay que **entregarla en persona**, porque no se manda ningún correo.
 
 ---
 

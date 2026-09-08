@@ -1427,3 +1427,398 @@ quedan en `default_passwords`, ignorado por git, **y no hay otra copia**.
 código nuevo — que es lo que prueba de verdad el reparto por rol, porque las cuentas
 antiguas conservaban el hash viejo. Sincronizados `readme.md` §1.4, `.env.example`,
 `ADR-0003` §5 y `AGENTS.md`.
+
+---
+
+### [2026-09-06] — Recuperar contraseña: enlace de un solo uso al correo de la cuenta
+
+**Prompt:** "Quisiera añadir la funcionalidad de recordar contraseña en la ventana de
+login, enviando al correo de origen un enlace de reestablecimiento. De momento no es
+necesario MFA."
+
+**Resumen.** La ventana de acceso solo tenía una puerta: `argon2id` no se invierte y no
+había ninguna pantalla para reponer credenciales, así que un olvido dejaba la cuenta
+muerta —lo dice el propio `.env.example` sobre las semillas—. Antes de escribir nada se
+consultaron las dos decisiones que cambiaban el trabajo: **transporte de correo** (no
+existía ninguno; el usuario eligió el **stub de consola**, sin proveedor externo) y
+**flujo** (propuesta OpenSpec primero, `recuperar-contrasena`, y después implementar).
+
+**Lo que decidió el diseño, y por qué.** La pieza ya existía a medias en el proyecto: la
+sesión opaca de `ADR-0002` es exactamente la misma figura —un secreto portador del que en
+la base solo se guarda el SHA-256—, así que el enlace **se copia de ella** en vez de
+inventarse. De ahí salen las cinco decisiones que sostienen el flujo: tabla propia
+(`password_reset_tokens`) y no columnas en `users`, para que un enlace gastado siga siendo
+reconocible; **respuesta idéntica exista o no la cuenta** —el login lleva desde el primer
+día evitando ser un oráculo de enumeración y esta pantalla no podía deshacerlo desde la
+puerta de al lado, así que ni el email desconocido ni la cuenta suspendida se distinguen,
+y **ni siquiera un fallo del transporte** cambia la respuesta—; **cada solicitud invalida
+las anteriores**; el consumo es un **CAS** (`WHERE usedAt IS NULL`), no una comprobación
+previa; y gastar el enlace **cierra todas las sesiones abiertas**, que es lo que quiere
+quien sospecha que alguien más entró — el método `deleteSessionsForUser` llevaba desde
+la tarea 2.1 escrito para este momento, sin que lo llamara nadie.
+
+**La consecuencia incómoda, aceptada a propósito:** el enlace **no se guarda en ninguna
+tabla**. Meterlo en la fila de `Notification` habría hecho cómodo el desarrollo y anulado
+por completo el hash —quien viera la tabla entraría en cualquier cuenta—, así que el
+adaptador de consola registra el mensaje **entero** y el log es el único sitio donde el
+enlace existe. Los dos avisos nuevos del buzón (`PASSWORD_RESET_REQUESTED`,
+`PASSWORD_CHANGED`) llevan la caducidad, nunca el token.
+
+Código nuevo: dominio puro `password-reset.ts`, puerto `Mailer` en `src/mail/` —fuera de
+`repositories`, que es persistencia— con adaptador de consola y mensaje como función pura,
+repositorio con su adaptador Prisma y su doble en memoria, dos casos de uso, dos Route
+Handlers (202 constante / 410 `RESET_TOKEN_INVALID`, código nuevo del enum de `ADR-0002`)
+y dos pantallas en español, con el enlace "¿Has olvidado la contraseña?" junto al campo del
+login. **Verificación:** `tsc`, `eslint`, **441 unitarios** (35 nuevos) y **53 E2E** en
+verde, incluida la auditoría `axe` de las dos pantallas nuevas, más `openspec validate`.
+El E2E no completa el circuito a propósito: el token no viaja por HTTP y exponerlo "solo
+para los tests" sería regalar una puerta trasera — el camino feliz se prueba donde el
+doble del transporte sí ve el mensaje.
+
+---
+
+### [2026-09-06] — El alta de personal existía en la API, pero no en la pantalla
+
+**Prompt:** "¿Cómo un admin da de alta un nuevo operador?" → "Añade el formulario."
+
+**Resumen.** La pregunta destapó un hueco que la documentación no reflejaba. `POST
+/api/employees` existía desde el bloque 8 —con el permiso `employee.manage`
+comprobado en el **caso de uso** y no solo en la ruta, hash argon2id de la contraseña
+y `AuditLog` con `employee.created`—, pero la pantalla `/backoffice/empleados` solo
+listaba, cambiaba el rol y suspendía. Su único `fetch` era el `PATCH` de cada fila.
+Un admin que entrara por la interfaz **no podía crear un operador**: tenía que llamar
+al endpoint a mano. Y `ux-flows.md` §A2 daba el flujo por "implementado", con "Alta de
+empleado con rol" dibujada en el diagrama.
+
+**Sin cambio de OpenSpec.** La spec `accounts-roles` ya dice que el admin "gestiona
+empleados" y el PRD ya tiene UC-B13 ("crea, modifica y desactiva"): esto no es un
+requisito nuevo, es un hueco de implementación. Inventar un change para taparlo habría
+sido ceremonia.
+
+**Lo que decidió la pantalla.** La contraseña inicial se muestra **en claro**: no es la
+del admin, tiene que **leerla para entregarla**, y ocultarla solo conseguiría que la
+copiara mal y nadie lo notara hasta el primer acceso fallido. El rol por defecto es
+**operador** —un admin de más reparte permisos que luego hay que quitar a mano—. El
+email repetido llega como error de campo (`errors[]`, RFC 9457) y se pinta junto al
+suyo **sin vaciar el formulario**: reescribir cuatro campos por una colisión sería
+castigar al admin por los tres que tenía bien. Y la pantalla dice lo que la API no
+puede decir — que la contraseña se entrega **en persona**, porque no se manda ningún
+correo (el adaptador de esta entrega escribe al log).
+
+**Lo que sigue sin poder hacer un admin:** reponer la contraseña de un empleado
+existente. Es la misma exclusión deliberada del cambio `recuperar-contrasena`: quien
+puede fijar credenciales ajenas tiene una puerta trasera. Para eso está el enlace.
+
+**Probado como formulario de admin, no en E2E**, por la misma razón escrita en
+`configuracion-forms.test.tsx`: crear un empleado de verdad dejaría una cuenta más en
+la base compartida en **cada** ejecución de la suite, y la semilla no limpia lo que no
+ha creado ella. La pantalla ya pasa por la auditoría `axe` del E2E. **Verificación:**
+`tsc`, `eslint`, **450 unitarios** (9 nuevos) y **53 E2E** en verde. Sincronizados
+`readme.md` §1.2 y §2.6, `PRD.md` §4.1, `ux-flows.md` §A2 (con la corrección fechada de
+lo que daba por hecho) y `AGENTS.md`.
+
+---
+
+### [2026-09-06] — «Sets fuera» contaba alquileres cerrados
+
+**Prompt:** "En el formulario de clientes: la columna «Sets fuera» ¿es la suma de sets
+históricos del cliente? Aparece un cliente con 5 sets y otro con 3, pero al ver el
+histórico aparece que los sets están cerrados o con uno en curso."
+
+**Resumen.** No era la suma histórica: era algo más raro y más equivocado. El `_count`
+de la lista de clientes filtraba **solo por el estado de la copia**
+(`copy: { state: { in: OCCUPYING } }`), sin mirar el estado del alquiler. Así, un
+alquiler cerrado hace meses seguía contando si **esa misma copia** está hoy fuera con
+otra persona. Comprobado contra la base antes de tocar nada: Diego 5 cuando tiene 1,
+Ana 3 cuando tiene 0, Carla 2 cuando tiene 0.
+
+La regla correcta ya estaba escrita en el resto del código —`currentCopyStates`, la
+cola de trabajo, la ficha de copia, los recordatorios de retención llevan las **dos**
+condiciones—; la lista de clientes era la única que se dejaba la mitad. El arreglo es
+esa condición, no una invención: `status: { not: "COMPLETED" }`.
+
+**Por qué se coló, que es lo que importa.** Los adaptadores Prisma **no tienen ninguna
+prueba**: los casos de uso corren contra dobles en memoria, y un doble no tiene copias
+que hayan pasado por varias manos. El fallo solo es visible contra una base con
+pasado, y de hecho nació cuando la semilla ganó nueve meses de historial. Por eso la
+prueba nueva es un E2E (`e2e/clientes.spec.ts`) y no un test de caso de uso: es **de
+solo lectura** —no alquila ni devuelve nada, que comparte base con el resto de la
+suite— y usa a Elena Prat, del historial sembrado, que nadie más toca y tiene la forma
+exacta del fallo: tres alquileres, todos devueltos. Verificado en los dos sentidos: con
+el fallo reintroducido a propósito, la prueba se pone roja (`Expected "0", Received
+"1"`).
+
+**Queda una pregunta abierta para el usuario**, que no se decidió por él: la columna
+cuenta los cuatro estados que ocupan plaza de plan, y dos de ellos —`EN_INSPECCION` y
+`EN_HIGIENIZACION`— son copias que ya están de vuelta en el almacén. El número es el
+correcto para saber si el cliente puede pedir otro set, pero el título "Sets fuera" las
+nombra mal. O cambia el título, o la columna pasa a `HELD_COPY_STATES`.
+
+---
+
+### [2026-09-06] — Los errores de validación hablaban en inglés y en jerga
+
+**Prompt:** "En formularios de cliente veo que los errores de validación deberían ser
+en castellano en lenguaje no técnico, evitar «Invalid input: expected number, received
+null» o «Too big: expected number to be <=12». ¿Lo revisas?"
+
+**Resumen.** Los fallos de Zod viajan al cliente dentro de `errors[]` (RFC 9457,
+ADR-0002 §2) y el formulario los pinta **tal cual** junto a su campo. Es decir: lo que
+escribe Zod lo lee una persona. Y sus mensajes por defecto están en inglés y hablan de
+tipos y operadores. La defensa hasta hoy era acordarse de escribir un mensaje propio en
+cada regla —`plans/[code]` lo dice por escrito en un comentario—, y en la tarjeta del
+alta se olvidó. Los dos mensajes citados son exactamente `expMonth` y `expYear`.
+
+**La decisión de fondo: que el defecto sea el correcto.** Un `z.config({ customError })`
+en `src/http/validation-messages.ts`, importado desde `parse-body.ts` —por donde pasa
+toda la validación de peticiones—, con frases que no mencionan tipos: "Este dato es
+obligatorio", "Tiene que ser 12 o menos", "Escribe al menos 8 caracteres", "Aquí va un
+número". **No se usa `z.locales.es()`**, que existe: traduce literalmente y deja el
+mismo lenguaje de programador en otro idioma ("Demasiado pequeño: se esperaba que texto
+tuviera >=2 caracteres"). El problema no era el idioma, era hablarle de tipos a quien
+está rellenando un formulario. El mensaje escrito en el esquema **sigue mandando** sobre
+el mapa —comprobado en un test—: el genérico es una red, no un techo, así que donde el
+rango es la explicación se puso a medida ("El mes va del 1 (enero) al 12 (diciembre)").
+
+**Dos cosas aparecieron por el camino.** La primera: **cuatro rutas** —`login`,
+`register` y las dos de restablecimiento— repetían a mano el bloque de `safeParse` que
+`parseJsonBody` existe precisamente para evitar, y por eso se saltaban el punto único
+donde ahora se instalan los mensajes. Ya pasan por él, y de paso se van veinte líneas de
+copia y pega por ruta.
+
+La segunda explica el "received null" del prompt, que era lo que no cuadraba:
+**`JSON.stringify` convierte `NaN` en `null`**. Los formularios hacían `Number(campo)`,
+así que un campo vacío llegaba como `0` —un valor perfectamente válido— y unas letras
+llegaban como `null`, indistinguibles de no haber escrito nada. El servidor no podía
+contestar bien porque no le llegaba con qué distinguirlo. `lib/form-values.ts`
+(`numericField`) conserva la diferencia: vacío es `null` —"este dato es obligatorio"— y
+lo que no es un número viaja **como el texto que se escribió** —"aquí va un número"—.
+Lo usan los cinco formularios que mandaban números.
+
+**Verificación:** 462 unitarios (12 nuevos, incluido uno que barre catorce esquemas y
+exige que ningún mensaje contenga `invalid|expected|received|too big|<=`) y una pasada
+real contra `/api/auth/register` con mes 13, campos vacíos, letras y casillas sin
+marcar: todos responden en castellano.
+
+---
+
+### [2026-09-06] — Cancelar dejaba encerrado a quien seguía con sesión
+
+**Prompt:** "Iniciando sesión como suscriptor cancelado, al ir a los planes y
+seleccionar un plan «Basic» o «Premium» no tiene efecto."
+
+**Resumen.** No es que el botón fallara: es que no había ningún sitio al que llevar.
+El bucle, reproducido contra el servidor: el portal de quien canceló dice "ver los
+planes" → `/planes` → sus botones apuntan al alta → y **la página de alta redirige al
+portal a quien ya tiene sesión** (307 comprobado). Se daba la vuelta entera y se
+volvía al punto de partida. Y la API no ofrecía salida:
+`PUT /api/subscriptions/me` responde **404** tanto para `status` como para `planCode`,
+porque una suscripción cancelada ya no rige y no hay ninguna que tocar.
+
+**Lo llamativo es por qué no se detectó.** El camino de "volver a suscribirse" **sí**
+existía —alta con la contraseña de la cuenta, spec `accounts-roles`— y el E2E lo
+cubría… llamando a la API de alta directamente. Por HTTP funcionaba; por la interfaz
+no había forma de llegar. La prueba pasaba y el usuario estaba encerrado.
+
+**La decisión: contratar es crear, no reactivar.** `POST /api/subscriptions/me`
+(`openSubscription`) abre una suscripción nueva para el usuario en sesión. **Sin
+contraseña**, porque la sesión ya acredita quién es —esa exigencia del alta pública
+existe justo porque allí no hay sesión—. Y **no reactiva la cancelada**: la spec dice
+que una cancelada no revive, así que se abre otra sobre la misma cuenta, con la
+dirección y la tarjeta que ya tenía, y con `startedAt` de hoy — la antigüedad para
+sets restringidos y para la cola se gana con la suscripción que rige, no con la que se
+canceló. La comprobación de "no tiene otra vigente" va **dentro de la transacción**,
+como ya hacía `resubscribe`: fuera, dos peticiones simultáneas abrirían dos.
+
+**Y el otro extremo del bucle:** el botón de `/planes` ahora **depende de quién mire**
+— visitante al alta, suscriptor a su portal, y al personal no se le enseña botón,
+porque un operador no contrata planes. Sin esto, el arreglo del portal seguiría
+escondido detrás de una redirección.
+
+**Verificación:** 467 unitarios (5 nuevos sobre el caso de uso) y 55 E2E, con el
+recorrido de interfaz completo —cancelar, ir a planes, pulsar, contratar— comprobado
+**en los dos sentidos**: devolviendo el enlace viejo, la prueba se pone roja esperando
+una URL que nunca llega. Más una pasada real con Carla, la cancelada de la semilla:
+201 al contratar y 409 al intentarlo dos veces. Se revirtió su suscripción para
+dejarla como fixture de "sin plan activo".
+
+**La spec se quedó corta y se formalizó a continuación** (change
+`contratar-plan-desde-el-portal`, 2026-09-07): nombraba la contraseña como la única
+forma de acreditar identidad al volver —lo era cuando se escribió, porque el único
+camino pasaba por el alta pública, sin sesión— y ahora reconoce las dos, más un
+requisito nuevo en `subscriptions` para contratar sin suscripción vigente. Queda
+archivarlo.
+
+---
+
+### [2026-09-07] — Sets restringidos: ¿ocultarlos o avisar desde cuándo?
+
+**Prompt:** "Como suscriptor, en el catálogo hay sets que no puedo alquilar por falta
+de antigüedad. ¿Qué sería mejor: no mostrarlos, o poner una advertencia de
+«disponibles solo a partir de X fecha» calculada según antigüedad?" → "Me convence.
+Spec e implementa."
+
+**Resumen.** La respuesta fue **advertencia con fecha, nunca ocultar**, con tres
+razones y un matiz que no estaba en la pregunta.
+
+Ocultar rompe cosas que ya estaban decididas. La primera es la más clara: la rejilla se
+sirve de la **proyección pública** para todo el mundo, así que esconder los restringidos
+a quien no llega haría que **iniciar sesión reduzca** lo que se ve — un visitante vería
+más catálogo que un suscriptor. La frontera de D13 es la disponibilidad, no la
+existencia. La segunda: la antigüedad es un **premio** por seguir suscrito, y un
+catálogo que esconde el premio no lo motiva. La tercera: son **9 de 35 sets** con el
+umbral por defecto, una cuarta parte recortada justo a quien acaba de pagar su primera
+cuota.
+
+**El matiz: la marca es del set y la fecha es de quien mira.** Poner la fecha personal
+en las 24 tarjetas convertiría una página idéntica para todos —y cacheable— en una
+distinta por usuario. Así que en la rejilla va la condición ("A partir de 3 meses",
+leída del ajuste, no escrita a mano) y en la ficha la fecha, que es donde se toma la
+decisión. De paso, el motivo de antigüedad era **el único de los cuatro sin salida**:
+los otros tres ofrecen una acción y este solo constataba.
+
+**El cambio de spec que esto exige** es sacar `restricted` de `NON_PUBLIC_SET_FIELDS`,
+donde estaba desde D13 junto al valor de referencia. Es una decisión, no un detalle: hay
+un test que afirmaba que no era público, y se **cambió la afirmación en vez de
+borrarla**.
+
+**Y una lección del cálculo.** `restrictedAvailableFrom` parece "sumar meses" y no lo
+es: tiene que ser la **inversa exacta** de `monthsBetween`. El test de barrido —365
+fechas de alta por cuatro umbrales, exigiendo que la fecha cumpla y que un milisegundo
+antes no— **tumbó dos implementaciones mías** antes de la buena. La primera sumaba
+meses y dejaba desbordar la fecha: llega **un día tarde** cuando el día no existe en el
+mes destino (alta el 30 de enero → el 30 de febrero no existe → la suma cae en el 2 de
+marzo, y `monthsBetween` ya da el mes por completo el 1). La segunda conservaba la hora
+del alta: media jornada de espera de más, porque `monthsBetween` compara días de
+calendario e ignora la hora. Ninguna de las dos se veía leyendo el código.
+
+**Verificación:** 474 unitarios (7 nuevos) y 56 E2E en verde, con un recorrido que
+comprueba que la marca se ve **sin sesión** y que a Bruno —el fixture del suscriptor
+reciente— la ficha le da la fecha.
+
+---
+
+### [2026-09-07] — Marcar todos los avisos como leídos
+
+**Prompt:** "En el formulario avisos de suscriptor, añadir botón/API para marcar todos
+los avisos como leídos."
+
+**Resumen.** `POST /api/notifications/read` y un botón en `/portal/avisos`. Tres
+decisiones que no venían dadas por el encargo:
+
+**El botón dice cuántos** ("Marcar los 24 como leídos") en vez de un "marcar todos"
+seco. La lista viene recortada a 50 y el servidor marca **todos** los que haya: sin el
+número, quien tuviera sesenta avisos no sabría si pulsar afecta a lo que ve o a lo que
+no. Y **no se pinta si no hay ninguno sin leer**: un botón que no puede cambiar nada es
+ruido en una pantalla que ya trae un botón por fila.
+
+**Cero no es un error, y eso lo separa del marcado individual**, que responde 404
+cuando el aviso ya estaba leído. Allí quien llama señaló una fila concreta y se
+encontró con que no había nada que cambiar; aquí pidió "deja el buzón a cero", y un
+buzón que ya está a cero cumple exactamente lo pedido. Se devuelve el recuento para que
+la pantalla no tenga que contarlo.
+
+**El destinatario sale de la sesión y el endpoint no tiene cuerpo**: no existe el
+parámetro con el que pedir el buzón de otro. Es la misma forma que el marcado
+individual, donde el `userId` viaja dentro del `WHERE` en vez de en una comprobación
+previa que se pueda olvidar. Y el `readAt: null` del `WHERE` acota lo que se toca a lo
+que de verdad cambia: sin él, volver a pulsar reescribiría la fecha de lectura de
+avisos leídos hace semanas.
+
+**Probado como componente y no en E2E**, por la razón de siempre en este proyecto:
+vaciar un buzón es un cambio sobre la base compartida, y las únicas cuentas con avisos
+son las del historial sembrado — marcarlos en una ejecución los dejaría leídos para la
+siguiente. La verificación real se hizo a mano contra el servidor con la cuenta de
+Bruno (24 marcados, 0 en la segunda llamada, 401 sin sesión) y **se revirtió después**:
+el lote comparte instante exacto de marcado, así que devolver esas 24 filas a "sin
+leer" fue exacto.
+
+**El hueco se cerró a continuación** (change `buzon-de-avisos`, 2026-09-07): la spec
+`notifications` describía qué avisos se generan y nada del buzón donde se leen, ni
+siquiera del marcado individual, que es anterior. El requisito nuevo recoge las reglas
+que ya se cumplían —dueño resuelto por la sesión, rechazos indistinguibles, "todos" son
+todos, y vaciar un buzón vacío no es un error—. **Y escribirlo destapó un defecto que
+nadie había visto:** `GET /api/notifications` contaba los "sin leer" sobre la lista
+devuelta, recortada a 50, así que daba de menos a quien tuviera más pendientes y con
+`?unread=1` devolvía directamente el tamaño de la página.
+
+### [2026-09-07] — El ojo de mostrar/ocultar la contraseña en el login
+
+**Prompt:** "En formulario login, en campo password quiero un icono/check tipo ojo que
+se tacha para mostrar o no la password que se está escribiendo"
+
+**Resumen.** Un botón con el ojo de `lucide-react` dentro del recuadro del campo, que
+alterna el `type` del input entre `password` y `text`. Tres cosas que el encargo no
+decía y había que decidir:
+
+**Botón conmutador, no `checkbox`.** Lo que se activa y desactiva es algo que ya está
+en pantalla, no un dato que viaje en el envío; un `checkbox` con `name` acabaría en el
+`FormData` que se serializa al API. Y `type="button"` no es cosmético: dentro de un
+`<form>`, un botón sin tipo **envía**, así que mirar la contraseña habría intentado
+entrar con ella a medio escribir. Hay una prueba dedicada a eso, porque es el fallo que
+se cuela sin que se note al probarlo a mano con la contraseña ya completa.
+
+**El nombre accesible no cambia; cambia `aria-pressed`.** La alternativa —reescribir el
+`aria-label` a "Ocultar contraseña" al mostrarla— es la más vista, pero deja el estado
+en el nombre del control, y que un lector de pantalla vuelva a leer un nombre que ha
+cambiado bajo el foco no está garantizado. Con el patrón de botón conmutador de ARIA
+(nombre fijo, estado en `aria-pressed`) el cambio de estado sí se anuncia al activarlo.
+El icono tachado es esa misma información para quien ve la pantalla, no otra.
+
+**Y una trampa que solo aparece al ejecutarlo:** `getByLabel` de Playwright busca por
+**subcadena**, así que el botón —"Mostrar contraseña"— pasó a casar también con el
+`getByLabel("Contraseña")` con el que `e2e/sesion.ts` inicia sesión, y el modo estricto
+habría tumbado casi toda la suite, no solo el login. Se arregla con `{ exact: true }`,
+que además hace el selector más preciso de lo que era. El contraste del icono no hubo
+que medirlo: usa `--muted-foreground`, que `tests/design-tokens.test.ts` ya sostiene a
+4,5:1 en los dos temas, muy por encima del 3:1 que pide un control (WCAG 1.4.11).
+
+**Probado como componente** (`tests/login-form.test.tsx`, 4 casos) por lo mismo que el
+resto de estado de interfaz: no toca servidor ni base. Se comprobó **en los dos
+sentidos** —fijando el `type` a `password` la prueba se pone roja—. La pantalla sigue
+pasando la auditoría de `axe` del E2E. **Solo el login**: `/registro` y
+`/restablecer-contrasena` también tienen campos de contraseña y se han dejado como
+estaban, que es lo que se pidió.
+
+**Verificado en verde:** `tsc`, `eslint`, `vitest run` (484, 4 nuevos), `next build` y
+`npm run test:e2e` (56).
+
+### [2026-09-08] — El ojo, en el resto de campos de contraseña
+
+**Prompt:** "hazlo en el resto de campos tipo password"
+
+**Resumen.** Con el segundo campo llegó el momento de extraer
+`components/password-input.tsx`, que es el criterio con el que nació
+`components/ui/input.tsx` en su día: se extrae cuando hay copias, no antes. Lo usan
+ahora **login**, **alta de suscriptor** y los **dos** campos de la contraseña nueva. En
+el alta el ojo cambia de sitio: el campo pasa por el `Field` genérico del formulario,
+que ahora elige control según el `type` y deja de duplicar las propiedades ARIA.
+
+**El componente conserva las clases crudas de esos campos** en vez de adoptar las del
+primitivo `Input`. Son distintas —`Input` usa `--input` para el borde, `text-base` en
+móvil y su propio anillo de foco—, y adoptarlas habría cambiado el aspecto de cuatro
+formularios en un encargo que era "añade el ojo".
+
+**El alta de personal se queda fuera, y no por olvido.** Su "Contraseña inicial" es
+`type="text"` por decisión ya escrita en el código: el admin tiene que **leerla** para
+poder entregarla, y no es su propia contraseña lo que teclea. No es un campo oculto al
+que le falte el interruptor; es uno deliberadamente visible, y ponérselo solo añadiría
+la posibilidad de esconderla.
+
+**`toggleLabel` es obligatorio y sin valor por defecto.** La pantalla de contraseña
+nueva tiene dos campos, y dos botones llamados igual son ambiguos para quien navega por
+nombre —y quedarían indistinguibles para los selectores del E2E—. Obligarlo fuerza a
+diferenciarlos al escribir el segundo campo, y hay una prueba que comprueba que los
+nombres de esa pantalla no se repiten.
+
+**La trampa del selector se multiplicó por cinco.** Lo que en el login era una línea
+—`getByLabel` busca por subcadena, y "Mostrar contraseña" casa con "Contraseña"— aquí
+alcanzaba al alta (`circuito-completo`) y a los cuatro selectores de
+`recuperar-contrasena`, incluido `getByLabel("Repite la contraseña")`, que el botón
+"Mostrar la contraseña repetida" también habría capturado. Los seis llevan ahora
+`{ exact: true }`.
+
+**Verificado en verde:** `tsc`, `eslint`, `vitest run` (489, 9 nuevos), `next build` y
+`npm run test:e2e` (56, con la auditoría de `axe` sobre las tres pantallas). Comprobado
+en los dos sentidos: fijando el `type` a `password` en el componente, la suite se pone
+roja.

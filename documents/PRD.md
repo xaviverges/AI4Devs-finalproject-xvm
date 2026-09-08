@@ -62,6 +62,20 @@ realizó y **cuándo** (auditoría).
   aceptación de condiciones (texto *lorem ipsum* en el MVP).
 - Actualizar la dirección de envío afecta a envíos futuros, no a los ya
   registrados.
+- **Alta de personal (solo admin).** El admin crea cuentas de operador o de
+  administrador desde el back-office, con una contraseña inicial que **entrega él en
+  persona**: no hay invitación por correo. Puede cambiar el rol de un empleado o
+  suspenderlo, pero **no reponer la contraseña de nadie** — para eso está el enlace de
+  recuperación. Toda alta y todo cambio de rol quedan en auditoría.
+- **Volver a contratar desde dentro.** Quien canceló y sigue con sesión abierta
+  contrata un plan nuevo desde su portal, conservando cuenta e historial. No se
+  "reactiva" la cancelada —ya no rige—: se abre otra sobre la misma cuenta, con la
+  dirección y la tarjeta que ya tenía. Sin sesión, el camino equivalente sigue siendo
+  el alta acreditando la contraseña.
+- **Recuperar el acceso.** Quien olvida su contraseña pide desde el login un enlace
+  a la dirección de su cuenta: un solo uso, caducidad de 1 hora, y al gastarse se
+  cierran todas las sesiones abiertas. La respuesta a la solicitud es **la misma
+  exista o no la cuenta** (no se revela quién está dado de alta). Sin MFA en el MVP.
 
 ### 4.2 Catálogo e inventario
 - **Set** (modelo de catálogo: foto, nº de piezas, edad recomendada, tema,
@@ -111,7 +125,10 @@ Reglas adicionales:
   **completada** (copia en `DISPONIBLE`); mientras tanto, esa copia sigue
   contando contra el límite del plan.
 - Antigüedad mínima configurable (p. ej. 3 meses) para sets marcados como
-  restringidos por precio/categoría.
+  restringidos por precio/categoría. **Se muestran en el catálogo señalados con la
+  antigüedad que exigen** —también al visitante: es un atributo del set, no
+  disponibilidad— y **nunca se ocultan**; la ficha le dice a quien no llega **desde
+  qué fecha** podrá alquilarlo.
 - No se puede pausar/cancelar la suscripción con una copia en su poder — ver
   §4.7 (camino feliz de cancelación).
 - Límite de colas simultáneas por usuario, configurable (default 1, ampliable
@@ -154,8 +171,13 @@ mitad de ventana, confirmación de alquiler, recordatorio amable de retención
 devolución recibida (en inspección), devolución completada (ya puede pedir
 otro).
 Al back-office: devolución incompleta detectada, copia dada de baja.
+Seguridad de la cuenta: se ha pedido restablecer la contraseña, la contraseña ha
+cambiado (ninguno lleva el enlace dentro — sirven para detectar un intento ajeno).
 
 ### 4.7 Otras funcionalidades del suscriptor
+- **Buzón de avisos**: lista de los avisos recibidos, que se marcan como leídos uno
+  a uno o **todos de una vez**. "Todos" son todos los del usuario, no solo los que
+  quepan en la pantalla.
 - **"Mis sets"**: vista con los sets actualmente en préstamo, histórico de
   alquileres pasados y posición en la(s) cola(s) activa(s).
 - **Cancelación (camino feliz)**: solo cuando el suscriptor no tiene ninguna
@@ -349,7 +371,7 @@ estándar:
 | ID | Nombre | Actor principal | Descripción breve |
 |---|---|---|---|
 | UC-P01 | Ver catálogo de sets | Visitante | Navega la lista de sets disponibles en el catálogo. |
-| UC-P02 | Ver detalle de set | Visitante | Consulta la ficha del set (foto, nº de piezas, tema, dificultad). La **disponibilidad y la posición en cola** solo son visibles para suscriptores autenticados (proyección pública vs. autenticada, `design.md` D13). |
+| UC-P02 | Ver detalle de set | Visitante | Consulta la ficha del set (foto, nº de piezas, tema, dificultad, y si exige antigüedad mínima). La **disponibilidad y la posición en cola** solo son visibles para suscriptores autenticados (proyección pública vs. autenticada, `design.md` D13). |
 | UC-P03 | Registrarse | Visitante | Alta como suscriptor: datos personales, declaración de mayoría de edad, tarjeta simulada, dirección de envío (obligatoria) y aceptación de condiciones. |
 | UC-P04 | Iniciar sesión | Visitante | Autenticación con credenciales. Precondición implícita de todos los UCs del Suscriptor. |
 | UC-P05 | Cambiar de plan | Suscriptor | Cambia entre BASIC (14,99 €/mes, 1 set) y PREMIUM (24,99 €/mes, hasta 2 sets simultáneos). La contratación inicial ocurre en el alta (UC-P03); bajar de plan se rechaza si tiene más sets fuera de los que permite el plan nuevo. |
@@ -553,8 +575,9 @@ paréntesis. El esquema ejecutable vive en `prisma/schema.prisma`.
 
 Las entidades se organizan en **tres anillos por orden de importancia**:
 
-- **Anillo 1 — Núcleo del circuito E2E:** `User`, `Session`, `Set`, `Copy`,
-  `Subscription`, `Rental`, `ReservationQueueEntry`, `ReservationOffer`.
+- **Anillo 1 — Núcleo del circuito E2E:** `User`, `Session`, `PasswordResetToken`,
+  `Set`, `Copy`, `Subscription`, `Rental`, `ReservationQueueEntry`,
+  `ReservationOffer`.
 - **Anillo 2 — Operación y trazabilidad:** `ConditionReport`, `Incident`,
   `CopyStateTransition`, `AuditLog`, `Notification`, `Shipment`.
 - **Anillo 3 — Configuración y pagos (simulados):** `Plan`, `SystemSetting`,
@@ -571,6 +594,12 @@ Las entidades se organizan en **tres anillos por orden de importancia**:
 - **`Session` para la sesión server-side** (`ADR-0002` §1): la cookie `httpOnly`
   transporta un token opaco y la tabla guarda solo su **hash**, de modo que un
   volcado de la base no permite suplantar sesiones. Revocar es borrar la fila.
+- **`PasswordResetToken` para recuperar el acceso**: misma figura que `Session` y por
+  la misma razón — el enlace que viaja en el correo es un token aleatorio del que la
+  tabla guarda solo el **hash**. Caduca en 1 hora y se marca `usedAt` al gastarse en
+  vez de borrarse, para poder responder "este enlace ya se usó" a quien reabre el
+  correo, y para dejar rastro de un incidente. Gastar uno cierra todas las `Session`
+  del usuario.
 - **`Set.setNum` (referencia de Rebrickable, único y opcional)**: conserva la
   procedencia de cada ficha del catálogo semilla y hace idempotente la carga de
   datos; `null` en los sets dados de alta a mano desde el back-office.

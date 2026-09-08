@@ -1220,6 +1220,225 @@ project. Read it at the start of every session.
   ningún entregable pendiente.** Para cualquier cambio de estado de una copia, usar
   `advanceCopyLifecycle` / `transitionCopy`; nunca `copy.update({state})`.
 
+- **Recuperar contraseña (2026-09-06, cambio OpenSpec `recuperar-contrasena`,
+  archivado el 2026-09-07):** el
+  login ya no es una puerta sin retorno. Enlace de un solo uso al correo de la cuenta,
+  **caducidad 1 h**, del que en la base solo vive el **hash** (`password_reset_tokens`,
+  sexta migración; el esquema pasa a **23 modelos** / 18 enums) — la misma figura que la sesión opaca de `ADR-0002`. Reglas que no
+  se pueden relajar sin romper el diseño: la solicitud responde **202 y el mismo cuerpo
+  siempre** (email desconocido, cuenta suspendida y fallo del transporte incluidos), o
+  la pantalla se convierte en el oráculo de enumeración que el login evita; cada
+  solicitud **invalida las anteriores**; el consumo es un **CAS** sobre
+  `usedAt IS NULL`; y gastar el enlace **cierra todas las sesiones** del usuario
+  (`deleteSessionsForUser`, que llevaba desde la tarea 2.1 sin llamante). Caducado, ya
+  usado e inexistente comparten código y mensaje: `RESET_TOKEN_INVALID` → **410**, el
+  primer código nuevo del enum de `ADR-0002` §2 desde el MVP.
+  **Transporte de correo:** puerto `Mailer` en **`src/mail/`** —no en `repositories`,
+  que es persistencia— con **adaptador de consola** (decisión del usuario: sin
+  proveedor externo). Registra el mensaje **entero** porque **el enlace no está en
+  ninguna tabla**: guardarlo en la fila de `Notification` anularía el hash, así que el
+  log —consola de `next dev`, runtime logs en Vercel— es el único sitio donde existe.
+  Dos avisos nuevos del buzón (`PASSWORD_RESET_REQUESTED`, `PASSWORD_CHANGED`) llevan
+  la caducidad, nunca el token. **Sin MFA y sin barrido periódico** (un token caducado
+  es inerte y el plan Hobby ya gasta sus dos crons). **Sin rate limiting** — deuda
+  anotada en el `design.md` del cambio.
+  **Verificado en verde:** `tsc --noEmit`, `eslint .`, `vitest run` (441), `next build`,
+  `npm run test:e2e` (53, con `axe` sobre las dos pantallas nuevas) y
+  `openspec validate --strict`, más una pasada manual del flujo entero contra la base
+  local sembrada.
+  **Documentación sincronizada:** `readme.md` (§1.2, §2.1/§2.2/§2.3 con el recuento de
+  modelos, §2.4 con `APP_URL`, §2.5, §2.6, §4 y §5), `PRD.md` (§4.1, §4.6, §15 anillo 1
+  y §15.1), `user_stories.md` (**HU-01b**), `ux-flows.md` (rutas públicas),
+  `ADR-0001` (recuento), `ADR-0002` (§1 y el enum de `code`: ampliarlo es una decisión
+  deliberada, no está congelado), `C4-architecture.md` (el sistema externo de correo
+  deja de ser "mockeado" y aparece el adaptador) y `.env.example`.
+  **Caveat de flujo encontrado:** un `next dev` de vida larga se queda con el cliente
+  Prisma **anterior** a la migración y devuelve 500 (`passwordResetToken` undefined);
+  hay que reiniciarlo. Y Next 16 **no deja levantar un segundo `next dev`** en el mismo
+  directorio: para verificar sin tocar el servidor del usuario, `npm run build` +
+  `start:standalone` en otro puerto.
+
+- **Alta de personal desde la pantalla (2026-09-06):** `/backoffice/empleados` tenía
+  lista, cambio de rol y suspensión, pero **no formulario de alta** — `POST
+  /api/employees` existía desde el bloque 8 con su permiso `employee.manage` y su
+  `AuditLog`, y crear un operador exigía llamarlo a mano. `ux-flows.md` §A2 daba el
+  flujo por "implementado" y era falso; ahora lo es. No hay cambio de OpenSpec: la
+  spec `accounts-roles` ya dice que el admin "gestiona empleados", así que esto es un
+  hueco de implementación, no un requisito nuevo.
+  **Decisiones de la pantalla:** la contraseña inicial se pinta **en claro**
+  (`type="text"`) porque el admin tiene que leerla para entregarla —no es la suya, y
+  ocultarla solo lograría que la copiara mal—; **rol por defecto OPERATOR**; el email
+  repetido llega como `errors[]` y se pinta junto al campo **sin vaciar** lo escrito.
+  La pantalla dice que la contraseña se entrega **en persona**: no hay invitación por
+  correo, y con el adaptador al log no llegaría a nadie. El admin sigue **sin poder
+  reponer** la contraseña de un empleado existente — eso es el enlace de recuperación,
+  y que un tercero pueda fijar credenciales ajenas es una puerta trasera.
+  **Probado como formulario de admin, no en E2E** (misma razón que
+  `configuracion-forms.test.tsx`: crearía una cuenta más en la base compartida en cada
+  ejecución). La pantalla ya pasa por la auditoría `axe` del E2E.
+  **Verificado en verde:** `tsc --noEmit`, `eslint .`, `vitest run` (450, 9 nuevos),
+  `next build` y `npm run test:e2e` (53).
+
+- **«Sets fuera» contaba alquileres cerrados (arreglado 2026-09-06):** el `_count` de
+  la lista de clientes filtraba **solo por el estado de la copia**, sin mirar el del
+  alquiler, así que sumaba los alquileres ya cerrados de una copia que hoy está fuera
+  **con otra persona** — Diego aparecía con 5 sets teniendo 1, Ana con 3 teniendo 0.
+  La regla correcta es la que usa todo lo demás (`currentCopyStates`, la cola de
+  trabajo, la ficha de copia): `status: { not: "COMPLETED" }` **y** el estado de la
+  copia; la lista de clientes era la única que se dejaba la mitad.
+  **Por qué se coló:** los adaptadores Prisma **no tienen ninguna prueba** —los casos
+  de uso corren contra dobles en memoria, y un doble no tiene copias que hayan pasado
+  por varias manos—, así que el fallo solo era visible contra una base con pasado.
+  Cubierto ahora por `e2e/clientes.spec.ts`, **de solo lectura** (no alquila ni
+  devuelve: comparte base con el resto de la suite) y verificado en los dos sentidos:
+  con el fallo reintroducido se pone rojo.
+  **Pendiente de decisión del usuario:** la columna cuenta los cuatro estados que
+  ocupan plaza de plan, y dos de ellos —`EN_INSPECCION`, `EN_HIGIENIZACION`— son copias
+  que ya están de vuelta en el almacén. O el título deja de decir "fuera", o la columna
+  pasa a `HELD_COPY_STATES`.
+
+- **Mensajes de validación en castellano llano (2026-09-06):** los fallos de Zod
+  viajan al cliente en `errors[]` y el formulario los pinta junto al campo, así que los
+  lee una persona — y el alta contestaba "Too big: expected number to be <=12" en el
+  mes de caducidad. La defensa era acordarse de poner mensaje propio en cada regla
+  (`plans/[code]` lo dice por escrito); en la tarjeta del alta se olvidó.
+  **Ahora el defecto es correcto:** `src/http/validation-messages.ts` instala un
+  `z.config({ customError })` con frases sin jerga, importado desde `parse-body.ts`.
+  **No se usa `z.locales.es()`**: traduce literalmente y deja el mismo lenguaje de
+  programador en español ("Demasiado pequeño: se esperaba que texto tuviera >=2
+  caracteres"). Un mensaje escrito en el esquema **sigue mandando** sobre el mapa (red,
+  no techo), y se añadieron a medida donde el rango es la explicación (mes/año de la
+  tarjeta, año del set, cadencia de retención).
+  **Dos hallazgos de camino.** (1) Cuatro rutas —`login`, `register` y las dos de
+  restablecimiento— repetían a mano el bloque de `safeParse` que `parseJsonBody` existe
+  para evitar, y por eso se saltaban el punto único; ya pasan por él. (2)
+  **`JSON.stringify` convierte `NaN` en `null`**, así que `Number("")` → 0 y
+  `Number("abc")` → `null` hacían indistinguibles "no escribí nada" y "escribí letras".
+  `lib/form-values.ts` (`numericField`) conserva la diferencia — vacío es `null`, y lo
+  que no es número viaja **como el texto escrito**—, y lo usan los cinco formularios
+  que mandaban números.
+  **Verificado en verde:** `tsc`, `eslint`, `vitest run` (462, 12 nuevos), `next build`
+  y una pasada real contra `/api/auth/register`: mes 13, campos vacíos, letras y
+  casillas sin marcar responden todos en castellano.
+
+- **Contratar plan desde el portal tras cancelar (arreglado 2026-09-06):** quien
+  cancelaba y seguía con sesión quedaba **en un bucle cerrado** — su portal decía "ver
+  los planes", `/planes` enlazaba al alta, y la página de alta **redirige al portal a
+  quien tiene sesión**: el botón "no hacía nada". Y la API no ofrecía salida:
+  `PUT /api/subscriptions/me` responde **404** a quien no tiene ninguna vigente, porque
+  una cancelada ya no rige. El camino de "volver a suscribirse" existía **solo sin
+  sesión** (alta + contraseña, spec `accounts-roles`), y el E2E lo cubría **por API**,
+  que es como se le pasó a la interfaz.
+  **Ahora:** `POST /api/subscriptions/me` (`openSubscription`) abre una suscripción
+  para el usuario en sesión — sin contraseña, que la sesión ya acredita quién es—,
+  reutilizando dirección y tarjeta de la cuenta. **No reactiva la cancelada**, abre una
+  nueva: `startedAt` cuenta desde hoy, así que la antigüedad para sets restringidos y
+  cola se gana con la que rige. La comprobación de "no tiene otra vigente" va **dentro
+  de la transacción** del adaptador (mismo motivo que `resubscribe`), y quien ya tiene
+  una recibe 409 `NOT_ELIGIBLE` remitiéndole al cambio de plan. Acción de auditoría
+  nueva: `subscription.opened`.
+  **Interfaz:** la contratación vive en `/portal/suscripcion` (con `?plan=` desde
+  `/planes`), y el botón de `/planes` **depende de quién mire** — visitante al alta,
+  suscriptor al portal, y al personal no se le enseña botón porque no contrata planes.
+  Cubierto por `e2e/portal.spec.ts` con el recorrido de interfaz completo, verificado
+  en los dos sentidos (con el enlace viejo, se pone rojo).
+  **Spec formalizada (2026-09-07):** change `contratar-plan-desde-el-portal`, en
+  verde con `--strict`. El requisito "Volver a suscribirse con una cuenta existente"
+  nombraba la **contraseña** como única forma de acreditar identidad —lo era cuando se
+  escribió, porque el único camino de vuelta pasaba por el alta pública, donde no hay
+  sesión—; ahora reconoce **las dos** y exige que volver sea alcanzable desde dentro.
+  Añade a `subscriptions` el requisito "Contratar un plan sin suscripción vigente"
+  (crea, no reactiva; antigüedad desde cero; nunca dos vigentes a la vez).
+  **Sus tareas nacen marcadas**: el código se arregló antes, porque había un usuario
+  encerrado. **Archivado el 2026-09-07** como
+  `2026-09-07-contratar-plan-desde-el-portal`; los deltas ya están en
+  `openspec/specs/`.
+
+- **Sets restringidos a la vista (2026-09-07, change `sets-restringidos-a-la-vista`):**
+  una cuarta parte del catálogo (9 de 35 con el umbral por defecto de 3 meses) exige
+  antigüedad, y solo se descubría abriendo la ficha, que además no decía **cuándo**
+  dejaba de aplicar — era el único de los cuatro motivos de no elegibilidad **sin
+  salida**. Decisión: **mostrar con la condición, nunca ocultar**; ocultarlos haría que
+  un visitante viera más catálogo que un suscriptor, y escondería el premio que la
+  regla existe para motivar.
+  **`restricted` pasa a la proyección pública** —sale de `NON_PUBLIC_SET_FIELDS`, donde
+  llevaba desde D13—: es un atributo del set, no inventario ni nivel `Copy`. La marca
+  de la rejilla es **estática** (la condición del set, igual para todos, la rejilla
+  sigue siendo la misma página para cualquiera) y la **fecha es personal** y vive en la
+  ficha, que ya se personaliza.
+  **`restrictedAvailableFrom` es la inversa exacta de `monthsBetween`, y cuesta más de
+  lo que parece.** El test de barrido —365 fechas de alta × 4 umbrales, exigiendo que
+  la fecha cumpla y que un milisegundo antes no— **tumbó dos implementaciones**: (1)
+  sumar meses y dejar desbordar llega **un día tarde** cuando el día no existe en el
+  mes destino (alta el 30 de enero: el 30 de febrero no existe, la suma cae en el 2 de
+  marzo y `monthsBetween` ya cumple el 1); (2) conservar la hora del alta hace esperar
+  medio día de más, porque `monthsBetween` compara días de calendario e **ignora la
+  hora**. Si se toca cualquiera de las dos funciones, el barrido es lo que lo detecta.
+  **Verificado en verde:** `tsc`, `eslint`, `vitest run` (474), `next build` y
+  `npm run test:e2e` (56).
+  **Archivado el 2026-09-07** como `2026-09-07-sets-restringidos-a-la-vista`; los
+  deltas ya están en `openspec/specs/`: `catalog-inventory` reconoce por fin que la
+  restricción **es parte de la proyección pública** —el requisito decía lo contrario
+  desde D13—, y `subscriptions` exige que el rechazo diga **desde cuándo** y fija que
+  la fecha se cuenta sobre la suscripción **vigente** (pausar no la desplaza; cancelar
+  y volver a contratar la reinicia). `openspec validate --all --strict` en verde (6).
+
+- **Marcar todos los avisos como leídos (2026-09-07):** `POST /api/notifications/read`
+  y botón en `/portal/avisos`, que solo aparece si hay algo que marcar y **dice
+  cuántos** — la lista viene recortada a 50 y el servidor marca todos los que haya, así
+  que sin el número no se sabría si pulsar afecta a lo que se ve o a lo que no. El
+  destinatario sale de la **sesión**, nunca del cuerpo: no existe el parámetro con el
+  que pedir el buzón de otro. `readAt: null` en el `WHERE` acota lo que se toca a lo que
+  cambia, para no reescribir la fecha de lectura de avisos viejos.
+  **Cero no es error aquí, a diferencia del marcado individual** (que responde 404 si ya
+  estaba leído): allí se señaló una fila concreta, aquí se pidió "deja el buzón a cero"
+  y un buzón ya vacío cumple lo pedido.
+  Probado como componente y no en E2E: vaciar un buzón es un cambio sobre la base
+  compartida y las únicas cuentas con avisos son las del historial sembrado.
+  **Hueco cerrado el 2026-09-07** (change `buzon-de-avisos`, archivado): la spec
+  `notifications` describía qué avisos se generan y **nada del buzón** —ni del marcado
+  individual, que es anterior—. Ahora tiene el requisito "Buzón de avisos del usuario",
+  con las reglas que ya se cumplían: el dueño sale de la sesión y **no se puede
+  expresar** el buzón de otro; los tres rechazos del marcado individual son
+  indistinguibles; "todos" son todos y no la página visible; y vaciar un buzón ya vacío
+  **no es un error** —se pidió un estado final, no una fila—.
+  **Escribirlo destapó un defecto real:** `GET /api/notifications` contaba los "sin
+  leer" sobre la lista devuelta, que viene recortada, así que daba de menos con muchos
+  pendientes y con `?unread=1` devolvía el tamaño de la página. Ahora se cuenta en la
+  base, como ya hacía `/portal/avisos`.
+
+- **Mostrar/ocultar la contraseña, en los cuatro campos (2026-09-07/08):**
+  `components/password-input.tsx` — el campo con el ojo de `lucide-react` dentro del
+  recuadro, que alterna el `type` entre `password` y `text`. Lo usan **login**, **alta
+  de suscriptor** y los **dos** de la contraseña nueva. Se extrajo al llegar el
+  segundo: mismo criterio con el que nació `components/ui/input.tsx`. Conserva las
+  clases crudas que ya tenían esos campos y **no** el estilo del primitivo `Input`
+  —añadir el ojo no era motivo para restilizar cuatro formularios—.
+  **Es botón conmutador, no `checkbox`** (alterna algo que ya está en pantalla; un
+  `checkbox` con `name` acabaría en el `FormData` que se serializa al API) y lleva
+  **`type="button"`**, sin el cual un botón dentro de un `<form>` envía y mirar la
+  contraseña intentaría entrar con ella a medio escribir. El nombre accesible es
+  **fijo** y el estado va en **`aria-pressed`**: patrón conmutador de ARIA, así el
+  cambio sí se anuncia al activarlo, cosa que un `aria-label` reescrito bajo el foco no
+  garantiza.
+  **`toggleLabel` es obligatorio y sin valor por defecto**, a propósito: la pantalla de
+  contraseña nueva tiene dos campos, y dos botones con el mismo nombre son ambiguos
+  para quien navega por nombre e indistinguibles para el E2E.
+  **El alta de personal queda fuera**: su "Contraseña inicial" es `type="text"` por
+  decisión escrita —el admin tiene que leerla para entregarla—, no un campo oculto al
+  que le falte el ojo.
+  **La trampa fue el E2E, no la pantalla:** `getByLabel` de Playwright busca por
+  **subcadena**, así que "Mostrar contraseña" casaba también con el
+  `getByLabel("Contraseña")` de `e2e/sesion.ts` —el login de casi toda la suite— y el
+  modo estricto lo habría tumbado entero. Los seis selectores de contraseña llevan
+  ahora `{ exact: true }`. Quien añada un control cuyo nombre contenga el de un campo,
+  que mire ahí primero.
+  El icono usa `--muted-foreground`, ya sostenido a 4,5:1 en los dos temas por
+  `tests/design-tokens.test.ts` (un control pide 3:1, WCAG 1.4.11).
+  **Verificado en verde:** `tsc`, `eslint`, `vitest run` (489, 9 nuevos en
+  `tests/password-input.test.tsx`), `next build` y `npm run test:e2e` (56, con las
+  auditorías de `axe` sobre las tres pantallas).
+
 _(Cerradas: framework front+back → **Next.js full-stack** (App Router), API REST en
 Route Handlers + OpenAPI (`ADR-0001` §2–§3, 2026-07-05); hosting → **Vercel +
 Supabase** (`ADR-0003`, 2026-08-22, sustituye la VM única de `ADR-0001` §5); auth →
