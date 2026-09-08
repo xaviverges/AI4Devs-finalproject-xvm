@@ -1449,6 +1449,13 @@ project. Read it at the start of every session.
   Branch Tracking**— y que **no dispara redespliegue**: producción se queda en el build
   vigente hasta el siguiente `push` a `main` o una promoción manual.
   **El log de prompts queda cerrado** a esta misma fecha (ver *Working conventions*).
+  **Capturas (2026-09-09):** `readme.md` §1.3 abre con **cinco capturas de la instancia
+  desplegada** en `screenshots/` —portada pública, catálogo del suscriptor, portal,
+  back-office de operador y de admin—. Cubren el "imágenes y/o videotutorial" que pide
+  la plantilla del curso y que, retirado el vídeo, no cubría nada. Se revisaron una a una
+  antes de commitear —el repositorio es público—: sin credenciales ni datos reales, y
+  los nombres son los ficticios de `prisma/seed.ts`. El par operador/admin se elige a
+  propósito: enseña la matriz de permisos como navegación filtrada (3 secciones vs. 5).
 
 _(Cerradas: framework front+back → **Next.js full-stack** (App Router), API REST en
 Route Handlers + OpenAPI (`ADR-0001` §2–§3, 2026-07-05); hosting → **Vercel +

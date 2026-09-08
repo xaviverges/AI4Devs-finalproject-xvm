@@ -134,6 +134,41 @@ y pide el siguiente—.
 
 ### **1.3. Diseño y experiencia de usuario:**
 
+Cinco capturas de la **instancia desplegada**, en el orden en que se recorre el
+producto: del visitante sin sesión a las dos caras del back-office. Están en
+[`screenshots/`](screenshots/) y los nombres que aparecen son personas **ficticias de
+la semilla** (`prisma/seed.ts`).
+
+**1. Portada pública** — lo que ve quien llega sin sesión: la propuesta, los planes y
+la puerta de entrada. La disponibilidad y todo lo de nivel copia exigen login.
+
+![Portada pública de Clickoteca sin sesión iniciada](screenshots/Pantalla_inicial.png)
+
+**2. Catálogo del suscriptor** — la rejilla con foto, tema, año, piezas, edad y
+dificultad. Arriba a la izquierda, `AT-AT` lleva la marca **"A partir de 3 meses"**:
+los sets restringidos por antigüedad **no se ocultan**, se señalan (§1.2).
+
+![Catálogo de sets con la marca de antigüedad mínima en AT-AT](screenshots/Catalogo_suscriptor.png)
+
+**3. Portal del suscriptor** — resumen de Gemma Roca: plan activo, plazas ocupadas,
+sets en casa y colas. "Police Station" está **en devolución** y "Hogwarts Castle"
+**en espera** en su cola — los dos estados del circuito, a la vez.
+
+![Portal del suscriptor con plan, sets en préstamo y colas activas](screenshots/Menu_Suscriptor.png)
+
+**4. Back-office — operador** — catálogo e inventario con la barra de navegación de
+**tres** secciones: Cola de trabajo, Catálogo y Clientes.
+
+![Catálogo del back-office visto por una operadora](screenshots/Menu_operador.png)
+
+**5. Back-office — administrador** — la cola de trabajo agrupada por lo que toca hacer
+(preparar, inspeccionar, recepcionar, catalogar). Su barra tiene **cinco** secciones:
+las tres del operador más **Configuración** y **Personal**. Comparar esta captura con
+la anterior enseña la matriz de permisos (`ADR-0002`) tal como se ve: la navegación se
+filtra por rol, no se pinta y se desactiva.
+
+![Cola de trabajo del back-office vista por el administrador](screenshots/Menu_administrador.png)
+
 > **Tres entregables cerrados y construidos:**
 >
 > 1. **Flujos por rol** — [`documents/ux-flows.md`](documents/ux-flows.md): actores y
@@ -200,7 +235,8 @@ y pide el siguiente—.
 > entregable** (2026-09-06): la revisión se hace sobre la aplicación real —con las
 > credenciales que se entregan por el canal del curso, ver §0.4—, donde las 18
 > historias se recorren por el propio pie de quien corrige en vez de por el camino
-> que una grabación hubiera elegido enseñar (`documents/PRD.md` §9).
+> que una grabación hubiera elegido enseñar (`documents/PRD.md` §9). Las **cinco
+> capturas del principio de esta sección** son la parte estática de ese recorrido.
 >
 > La navegación funcional está definida como casos de uso (PRD §14) y como historias
 > de usuario (`documents/user_stories.md`, resumidas en §5). Objetivos transversales
