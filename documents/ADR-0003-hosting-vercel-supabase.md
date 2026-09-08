@@ -44,9 +44,10 @@ Next 16, así que Prisma en el *proxy* funciona.
 ### 1. Plataforma: Vercel (plan Hobby)
 
 El proyecto de Vercel apunta al repositorio del curso,
-`xaviverges/AI4Devs-finalproject-xvm`, con **Production Branch = `MVP-Fase-1`**
-(por defecto Vercel despliega *Production* desde `main`, que aquí es el andamiaje
-del curso). Cada `push` a esa rama despliega. TLS, dominio y CDN los pone la
+`xaviverges/AI4Devs-finalproject-xvm`, con **Production Branch = `main`** desde el
+2026-09-08. Hasta entonces fue `MVP-Fase-1`, porque `main` contenía solo el andamiaje
+del curso; al integrar el MVP en `main` para la entrega final, la rama de producción
+vuelve a ser la de por defecto. Cada `push` a esa rama despliega. TLS, dominio y CDN los pone la
 plataforma: no hay reverse proxy propio, ni systemd, ni firewall que administrar.
 
 **El modo `output: "standalone"` se desactiva en Vercel.** En ese modo Next se
@@ -170,7 +171,7 @@ resetear la instancia. Fue exactamente lo que ocurrió el 2026-09-06.
 **Positivas**
 - **Cero ops:** TLS, CDN, parches y disponibilidad los pone la plataforma; los
   backups, Supabase.
-- **Despliegue por `git push`** a `MVP-Fase-1`, con *preview* por rama.
+- **Despliegue por `git push`** a `main`, con *preview* por rama.
 - **Coste 0** y sin riesgo de que un proveedor reclame la instancia por ociosa.
 - Mismo origen y cookie *first-party* **sin cambios** en `ADR-0002`.
 

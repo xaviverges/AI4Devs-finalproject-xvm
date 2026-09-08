@@ -8,13 +8,11 @@ project. Read it at the start of every session.
 - **Personal project.** Owner: Xavier Vergés (<xaviverges@gmail.com>).
 - **Memory lives here.** Record durable project facts, decisions, and context in this
   file (AGENTS.md) — not in the default `.claude` memory directory.
-- **Prompt log.** Log **only project-content prompts** (those producing deliverables:
-  architecture, data model, API, code, etc.). **Skip meta/setup/workflow prompts.** For
-  each logged prompt, do **both**:
-  1. Append it to the chronological **"Log de prompts"** section at the end of
-     `prompts.md`, with a short summary ("resumen") of the assistant's response.
-  2. File the most relevant ones into their matching structured deliverable section,
-     respecting the "max 3 per section" rule.
+- **Prompt log — CERRADO (decisión del usuario, 2026-09-08).** **No se registran en
+  `prompts.md` los prompts a partir de esa fecha**, ni en el log cronológico ni en las
+  secciones estructuradas. El fichero queda como está, cerrado el 2026-09-08, y solo se
+  toca si el usuario lo pide explícitamente. *(Regla anterior, ya no vigente: se
+  registraba cada prompt de contenido de proyecto en las dos ubicaciones.)*
 - **Don't invent.** When anything is ambiguous or unknown, ask the user rather than
   guessing.
 - All diagrams must be written in Mermaid language for enhanced compatibility
@@ -40,7 +38,7 @@ project. Read it at the start of every session.
   aparte** (node-cron), no in-process (Next multi-instancia lo duplicaría);
   frontend cross-browser (evergreen), responsive mobile-first, accesibilidad
   objetivo **WCAG 2.1 AA** (EN 301 549 / European Accessibility Act). Hosting
-  **desplegado**: **Vercel** (plan Hobby, *Production Branch* `MVP-Fase-1`) con
+  **desplegado**: **Vercel** (plan Hobby, *Production Branch* `main`) con
   **Supabase Postgres**, en **https://clickoteca.vercel.app** — front y `/api` en el
   **mismo despliegue** (sin CORS, cookie de sesión *first-party*), imágenes como URLs
   de Rebrickable y trabajos periódicos por `GET /api/cron/:job`. Detalle en
@@ -1124,7 +1122,8 @@ project. Read it at the start of every session.
   `AI4Devs-finalproject-xvm`**, y `clickoteca` se archiva. **Ojo con la rama:** Vercel
   despliega *Production* desde la rama de producción del repo, que por defecto es `main`
   —aquí, el andamiaje del curso—, así que hay que fijar **Production Branch =
-  `MVP-Fase-1`**.
+  `MVP-Fase-1`**. *(Vigente hasta el 2026-09-08, cuando el MVP se integra en `main` para
+  la entrega final y la rama de producción vuelve a ser `main`.)*
 - **El pooler de sesión no aguanta serverless (2026-08-21):** `/backoffice/catalogo`
   fallaba en el despliegue con la página de error de Next (`digest: 2243060452`) y en el
   log de Vercel: `PrismaClientKnownRequestError … (EMAXCONNSESSION) max clients reached
@@ -1438,6 +1437,18 @@ project. Read it at the start of every session.
   **Verificado en verde:** `tsc`, `eslint`, `vitest run` (489, 9 nuevos en
   `tests/password-input.test.tsx`), `next build` y `npm run test:e2e` (56, con las
   auditorías de `axe` sobre las tres pantallas).
+
+- **`main` es la rama de la entrega y la de producción (2026-09-08):** hasta hoy el
+  trabajo vivía en `MVP-Fase-1` y `main` era el andamiaje del curso, con `readme.md`
+  §0.4/§0.5 apuntando a `project-xvm` —que se quedó 13 commits atrás—. Los 12 commits
+  posteriores al reseteo de la instancia se integran en `main` por Pull Request (merge
+  `678d8f7`), el readme repunta a `main` y **`project-xvm` se abandona**: una rama menos
+  que mantener sincronizada, y quien corrige lee la rama por defecto del repo.
+  En Vercel, **Production Branch pasa a `main`**, ajuste que **ya no está en
+  *Settings → Git*** —Vercel lo movió a **Settings → Environments → Production →
+  Branch Tracking**— y que **no dispara redespliegue**: producción se queda en el build
+  vigente hasta el siguiente `push` a `main` o una promoción manual.
+  **El log de prompts queda cerrado** a esta misma fecha (ver *Working conventions*).
 
 _(Cerradas: framework front+back → **Next.js full-stack** (App Router), API REST en
 Route Handlers + OpenAPI (`ADR-0001` §2–§3, 2026-07-05); hosting → **Vercel +

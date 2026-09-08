@@ -130,7 +130,7 @@ C4Container
   reutilizan la misma capa de casos de uso importándola como módulo, así que no
   pueden divergir.
 - **Hosting (desplegado):** **Vercel** (plan Hobby, *Production Branch*
-  `MVP-Fase-1`) sirve front y `/api` desde el mismo despliegue —**mismo origen** →
+  `main`) sirve front y `/api` desde el mismo despliegue —**mismo origen** →
   sin CORS y cookie de sesión *first-party* (`ADR-0002`)—, con TLS y CDN de la
   plataforma. La base es **Supabase Postgres**, usada solo como Postgres (sin Auth,
   Storage ni RLS, con la Data API desactivada): la app va al **pooler de

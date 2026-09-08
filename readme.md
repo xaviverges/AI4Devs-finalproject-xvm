@@ -41,12 +41,14 @@ Corre en **Vercel** (plan Hobby) con **Supabase Postgres** — ver §2.4 y
 > repositorio es público): se entregan por el canal del curso. Las cuentas de
 > ejemplo de §1.4, con la contraseña `clickoteca`, son **las de tu entorno local**.
 
-Repositorio: https://github.com/xaviverges/AI4Devs-finalproject-xvm/tree/project-xvm
+Repositorio: https://github.com/xaviverges/AI4Devs-finalproject-xvm/tree/main
 
 ### 0.5. URL o archivo comprimido del repositorio
 
 Repositorio público en GitHub: https://github.com/xaviverges/AI4Devs-finalproject-xvm
-(rama de trabajo `project-xvm`).
+— rama **`main`**, que desde el 2026-09-08 es a la vez la rama de la entrega y la de
+producción en Vercel. El trabajo se desarrolló en `MVP-Fase-1` y se integró en `main`
+por Pull Request (§7).
 
 
 ---
@@ -546,8 +548,9 @@ flowchart TB
 - **Mismo origen:** front y `/api` salen del mismo despliegue, así que la cookie de
   sesión sigue siendo *first-party* y no hay CORS. TLS, dominio y CDN los pone la
   plataforma: no hay reverse proxy, systemd ni firewall que administrar.
-- **Despliegue por `git push`** a la rama de producción, que aquí es **`MVP-Fase-1`**
-  (Vercel usa `main` por defecto, y en este repo `main` es el andamiaje del curso).
+- **Despliegue por `git push`** a la rama de producción, que es **`main`** desde el
+  2026-09-08. Antes fue `MVP-Fase-1`: `main` contenía solo el andamiaje del curso y el
+  trabajo vivía en su propia rama, hasta que el MVP se integró para la entrega final.
   El build es `prisma generate && next build`, porque `src/generated/prisma` no está
   versionado y en una máquina limpia no existe.
 - **El paquete autónomo (`output: standalone`) se desactiva en Vercel**, donde rompe
@@ -631,7 +634,8 @@ algún día importa: descargar la CA de Supabase y usar `verify-full` con `sslro
 **Puesta en marcha de un despliegue nuevo**, por si hay que repetirla:
 
 1. Crear el proyecto en Vercel apuntando al repositorio y fijar **Production Branch**
-   (aquí, `MVP-Fase-1`).
+   (aquí, `main`). El ajuste **ya no está en *Settings → Git***: vive en
+   **Settings → Environments → Production → Branch Tracking**.
 2. Añadir la base (integración de Supabase) y definir `DATABASE_URL` a mano con la URL
    del **pooler de transacción** (`:6543`) más `uselibpqcompat=true`. Las variables
    `STORAGE_*` que crea la integración no las lee el código.
@@ -1272,10 +1276,11 @@ Tickets derivados de las historias anteriores y de las tareas del cambio OpenSpe
 
 ## 7. Pull Requests
 
-> El proyecto se ha desarrollado en un flujo **directo a la rama `project-xvm`**
-> (proyecto personal), por lo que no hay Pull Requests formales en GitHub. A modo de
-> trazabilidad se documentan los tres hitos de entrega principales (commits) que
-> equivaldrían a sendas PRs.
+> El desarrollo se hizo en un flujo **directo a la rama de trabajo** (proyecto
+> personal), sin Pull Requests intermedias. A modo de trazabilidad se documentan abajo
+> los tres hitos de entrega principales (commits) que equivaldrían a sendas PRs. **La
+> integración final sí pasó por Pull Request:** `MVP-Fase-1` → `main`, 12 commits,
+> fusionada el 2026-09-08 en `678d8f7` ("Mvp fase 2 para entrega final").
 
 **Pull Request 1 — Modelo de datos** (`7c37834`)
 Esquema Prisma (23 modelos / 18 enums), PRD §15 (tres anillos de importancia +
